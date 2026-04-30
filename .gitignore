@@ -1,5 +1,12 @@
 node_modules
 .env
+.wrangler/
+*.log
+scratch_test*.js
+episode_html.txt
 save.txt
 db-save.txt
-
+.vscode/
+.idea/
+.DS_Store
+*.swp

@@ -1,6 +1,6 @@
 # 🐱 123Anime API
 
-A high-performance anime scraping API built with Node.js, Express, Cheerio, and Puppeteer. Fetches anime data from **123anime.la** — including search, details, streaming links, trending, rankings, schedule, and more.
+A high-performance anime scraping API built with Node.js, Express, and Cheerio. Fetches anime data from **123anime.la** — including search, details, streaming links, trending, rankings, schedule, and more. 
 
 ---
 
@@ -8,8 +8,8 @@ A high-performance anime scraping API built with Node.js, Express, Cheerio, and 
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd nekozu-anime-api
+git clone https://github.com/mdtahseen7/123anime-api.git
+cd 123anime-api
 
 # Install dependencies
 npm install
@@ -24,58 +24,93 @@ The API will be running at `http://localhost:5000`
 
 ## 📡 API Endpoints
 
-### Root
+### 📺 Streaming Links
+Get the direct video iframe URL for any specific anime episode.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | API info & endpoint listing |
+**Endpoint:** `GET /episode-stream?id={anime-slug}&ep={episode}`
+**Example:** `http://localhost:5000/episode-stream?id=one-piece&ep=1`
 
-### 🏠 Homepage Sections
+**Response:**
+```json
+{
+  "success": true,
+  "anime_id": "one-piece",
+  "episode": "1",
+  "data": {
+    "title": "One Piece",
+    "episode_number": "1",
+    "streaming_link": "https://play2.echovideo.ru/embed-3/UWxwb..."
+  },
+  "extraction_time_seconds": 0.924,
+  "cached": false
+}
+```
 
+### 🔍 Search
+Search for anime titles and retrieve cover images, titles, sub/dub status, and more.
+
+**Endpoint:** `GET /search?keyword={query}`
+**Example:** `http://localhost:5000/search?keyword=one+piece`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "title": "One Piece",
+      "image": "https://123anime.la/images/one-piece.jpg",
+      "episode": "1100",
+      "hasSub": true,
+      "hasDub": true,
+      "japanese_title": "ワンピース"
+    }
+  ]
+}
+```
+
+### 📖 Anime Details
+Get full metadata, ratings, synopsis, genres, and Japanese title translations for a specific series.
+
+**Endpoint:** `GET /anime/:slug`
+**Example:** `http://localhost:5000/anime/one-piece`
+
+**Response:**
+```json
+{
+  "title": "One Piece",
+  "image": "https://123anime.la/images/one-piece.jpg",
+  "description": "Gol D. Roger was known as the Pirate King...",
+  "type": "TV",
+  "country": "Japan",
+  "genres": ["Action", "Adventure", "Comedy", "Fantasy"],
+  "status": "Ongoing",
+  "released": "1999",
+  "quality": "HD",
+  "rating": {
+    "score": 8.9,
+    "votes": 145000
+  },
+  "japanese_lang": "ワンピース",
+  "execution_time_sec": "0.456"
+}
+```
+
+### 📅 Schedule
+Get the live weekly airing schedule for currently broadcasting anime.
+
+**Endpoint:** `GET /schedule`
+**Example:** `http://localhost:5000/schedule`
+
+### 🏠 Homepage & Leaderboards
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/home` | Full homepage data (slider, trending, recently updated, rankings) |
 | `GET` | `/slider` | Featured anime carousel |
 | `GET` | `/trending` | Daily trending anime (Top Anime - Day) |
 | `GET` | `/top_airing` | Currently airing anime |
-| `GET` | `/most_popular` | Most popular this week |
-| `GET` | `/most_favorite` | Most favorited this month |
 | `GET` | `/recent_updates` | Recently updated episodes with English titles |
-| `GET` | `/ongoing` | Currently ongoing series |
-| `GET` | `/underrated` | Underrated anime picks (via Kitsu + Jikan) |
-| `GET` | `/overrated` | Highly-rated anime comparison |
-
-### 🏆 Leaderboard
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
 | `GET` | `/top10` | Top 10 anime today |
-| `GET` | `/weekly10` | Top 10 anime this week |
-| `GET` | `/monthly10` | Top 10 anime this month |
-
-### 🔍 Search & Browse
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/search?keyword=one+piece` | Search anime by keyword |
-| `GET` | `/search/suggestions?q=demon+slayer` | Search suggestions |
-| `GET` | `/az-all-anime/all/?page=1` | Browse A-Z anime list |
-| `GET` | `/genere/Action?page=2` | Browse anime by genre |
-
-### 📺 Anime Details & Streaming
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/anime/:slug` | Full anime details (synopsis, rating, episodes, genres) |
-| `GET` | `/api/v2/anime/:animeId/episodes` | Get episode list for an anime |
-| `GET` | `/episode-stream?id=one-piece&ep=1` | Get streaming URL for a specific episode |
-
-### 📅 Schedule
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/schedule` | Live weekly airing schedule |
-| `GET` | `/db-schedule` | Schedule from database |
 
 ---
 
@@ -95,31 +130,6 @@ Some endpoints support optional query parameters:
 
 ---
 
-## 📦 Response Format
-
-All endpoints return JSON in this structure:
-
-```json
-{
-  "success": true,
-  "data": [ ... ],
-  "extraction_time_seconds": 1.234,
-  "timestamp": "2026-01-01T00:00:00.000Z"
-}
-```
-
-Error responses:
-
-```json
-{
-  "success": false,
-  "error": "Error description",
-  "extraction_time_seconds": 0.5
-}
-```
-
----
-
 ## 🏗️ Tech Stack
 
 | Component | Technology |
@@ -127,74 +137,31 @@ Error responses:
 | Runtime | Node.js 18+ |
 | Framework | Express 5 |
 | HTML Parsing | Cheerio |
-| Browser Automation | Puppeteer (for schedule & streaming) |
 | HTTP Client | Axios |
 | Caching | In-memory with TTL |
 | Database | MongoDB / Mongoose (optional, for schedule) |
 
 ---
 
-## 📁 Project Structure
-
-```
-├── index.js                    # Entry point & route registration
-├── routes/                     # Express route handlers
-│   ├── home.js
-│   ├── slider.js
-│   ├── trending.js
-│   ├── top10.js
-│   ├── weekly.js
-│   ├── monthly.js
-│   ├── search.js
-│   ├── watch.js
-│   └── ...
-├── scrapeanime/               # Scraper modules
-│   ├── homepage/
-│   │   ├── scrapeservice.js   # Main homepage aggregator
-│   │   ├── slider/
-│   │   ├── trending/
-│   │   ├── top_airing/
-│   │   ├── most_popular/
-│   │   ├── most_favorite/
-│   │   ├── recently_updated/
-│   │   ├── Ongoing/
-│   │   ├── Underrated/
-│   │   └── Overrated/
-│   ├── Leaderboard/
-│   │   ├── Top/scrapeTop10.js
-│   │   ├── Weekly/scrapeWeeklyTop10.js
-│   │   └── Monthly/scrapeMonthlyTop10.js
-│   ├── Browse/Search/
-│   ├── AnimeDetails/
-│   ├── SingleEpisode/
-│   └── Schedule/
-├── service/
-│   ├── scraperService.js      # Shared fetch & load utility
-│   └── simpleCache.js         # In-memory caching
-└── util/                      # Utility functions
-```
-
----
-
 ## ☁️ Deployment
 
-### Local
+### Cloudflare Workers (Serverless Edge)
+The API can be instantly deployed to Cloudflare Workers for 0ms cold starts and infinite scaling. 
+See the `cloudflare-worker/` directory for a Hono-based wrapper ready for deployment.
+
 ```bash
-npm start
+cd cloudflare-worker
+npm install
+npm run deploy
 ```
 
-### Cloudflare Workers
-See the `cloudflare-worker/` directory for a Cloudflare-deployable version that wraps the API.
-
-### Docker (optional)
+### Docker
 ```dockerfile
 FROM node:18-slim
-RUN apt-get update && apt-get install -y chromium
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --production
 COPY . .
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 EXPOSE 5000
 CMD ["node", "index.js"]
 ```
