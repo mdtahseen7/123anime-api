@@ -1,0 +1,54 @@
+import express from 'express';
+import { getHomepageCached } from '../scrapeanime/homepage/scrapeservice.js';
+
+const router = express.Router();
+
+router.get('/', async (req, res) => {
+  try {
+    const start = Date.now();
+    const includeDetails = req.query.details === '1' || req.query.details === 'true';
+    const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+
+    const { value: result, lastUpdated, rateLimited, error } = await getHomepageCached(includeDetails, fresh);
+    const duration = (Date.now() - start) / 1000;
+
+    const meta = {
+      cache: {
+        last_updated: lastUpdated || null,
+        age_ms: lastUpdated ? (Date.now() - lastUpdated) : null,
+        include_details: includeDetails,
+        rate_limited: !!rateLimited
+      }
+    };
+
+    if (error) {
+      res.status(502).json({ success: false, error: String(error), extraction_time_seconds: duration, ...meta });
+      return;
+    }
+
+    const filtered = (result.data || []).filter(it => !['most_popular', 'most_favorite', 'top_airing', 'trending'].includes(it.section));
+
+    const transformedData = filtered.map((item) => {
+      if (item && item.section === 'underrated') {
+        return {
+          index: typeof item.index !== 'undefined' ? item.index : null,
+          title: item.title || null,
+          image: item.image || null,
+          subtitles: typeof item.subtitles !== 'undefined' ? item.subtitles : (typeof item.sub !== 'undefined' ? item.sub : null),
+          score: typeof item.score !== 'undefined' ? item.score : null,
+          isTV: typeof item.isTV !== 'undefined' ? item.isTV : !!item.tv,
+          dubbed: typeof item.dubbed !== 'undefined' ? item.dubbed : (typeof item.dub !== 'undefined' ? item.dub : false),
+          section: item.section || 'underrated',
+        };
+      }
+      return item;
+    });
+
+    res.json({ success: true, data: transformedData, extraction_time_seconds: duration, ...meta });
+  } catch (err) {
+    const duration = (Date.now() - (req._startTime || Date.now())) / 1000;
+    res.status(500).json({ success: false, error: err.message, extraction_time_seconds: duration });
+  }
+});
+
+export default router;
