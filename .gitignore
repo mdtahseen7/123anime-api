@@ -10,3 +10,6 @@ db-save.txt
 .idea/
 .DS_Store
 *.swp
+
+temp_puppeteer/
+network_utf8.log
