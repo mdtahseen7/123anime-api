@@ -64,10 +64,57 @@ export const scrapeSingleEpisode = async (episodeUrl) => {
             const streamingLink = response.data.target;
             console.log(`✅ Found valid streaming link via API: ${streamingLink.substring(0, 60)}...`);
 
+            // Try to extract direct M3U8 for proxy/ad-free viewing
+            let directM3u8 = null;
+            let m3u8Headers = null;
+            
+            try {
+                if (streamingLink.includes('echovideo.ru/embed-3/')) {
+                    const e1 = await axios.get(streamingLink, { timeout: 5000 });
+                    const match = e1.data.match(/var zrpart2\s*=\s*'([^']+)'/);
+                    if (match) {
+                        const zrpart2 = match[1];
+                        const baseUrl = streamingLink.split('/').slice(0, 3).join('/');
+                        const hsUrl = `${baseUrl}/hs/${zrpart2}`;
+                        
+                        const e2 = await axios.get(hsUrl, { 
+                            headers: { 'Referer': streamingLink },
+                            timeout: 5000 
+                        });
+                        
+                        const idMatch = e2.data.match(/data-id="([^"]+)"/);
+                        if (idMatch) {
+                            const dataId = idMatch[1];
+                            const apiUrl = `${baseUrl}/hs/getSources?id=${dataId}`;
+                            
+                            const e3 = await axios.get(apiUrl, {
+                                headers: { 
+                                    'Referer': hsUrl,
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                },
+                                timeout: 5000
+                            });
+
+                            if (e3.data && e3.data.sources) {
+                                directM3u8 = e3.data.sources;
+                                m3u8Headers = {
+                                    'Referer': baseUrl + '/',
+                                    'Origin': baseUrl
+                                };
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("❌ Direct M3U8 extraction failed (ad-free fallback may be unavailable):", e.message);
+            }
+
             const streamingData = {
                 title: animeTitle,
                 episode_number: episodeNumber,
-                streaming_link: streamingLink
+                streaming_link: streamingLink,
+                direct_m3u8: directM3u8,
+                m3u8_headers: m3u8Headers
             };
 
             const result = {

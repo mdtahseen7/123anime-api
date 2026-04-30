@@ -39,7 +39,12 @@ Get the direct video iframe URL for any specific anime episode.
   "data": {
     "title": "One Piece",
     "episode_number": "1",
-    "streaming_link": "https://play2.echovideo.ru/embed-3/UWxwb..."
+    "streaming_link": "https://play2.echovideo.ru/embed-3/UWxwb...",
+    "direct_m3u8": "https://hlsx3cdn.burntburst45.store/one-piece/1/master.m3u8",
+    "m3u8_headers": {
+      "Referer": "https://play2.echovideo.ru/",
+      "Origin": "https://play2.echovideo.ru"
+    }
   },
   "extraction_time_seconds": 0.924,
   "cached": false
