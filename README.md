@@ -288,7 +288,7 @@ npm install
 npm run deploy
 ```
 
-**Live URL:** `https://123anime-api.mdtahseen7378.workers.dev`
+**Live URL:** `Host your own worker please, it will be much better for me`
 
 ### Docker
 
