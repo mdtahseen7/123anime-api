@@ -1,7 +1,24 @@
 import express from 'express';
 import axios from 'axios';
+import http from 'http';
+import https from 'https';
 
 const router = express.Router();
+
+// ─── Persistent connection agents ────────────────────────────────────────────
+// These reuse TCP+TLS connections across requests, eliminating the ~350ms
+// handshake overhead that was causing constant buffering.
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 20, keepAliveMsecs: 30000 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 20, keepAliveMsecs: 30000 });
+
+// Dedicated axios instance with connection pooling for CDN requests
+const cdnClient = axios.create({
+    httpAgent,
+    httpsAgent,
+    timeout: 15000,
+    maxRedirects: 5,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+});
 
 // ─── In-memory cache for resolved M3U8 base URLs (avoids re-scraping) ────────
 const m3u8Cache = new Map();
@@ -19,9 +36,8 @@ async function resolveM3u8(animeId, episode) {
     // Step 1: Hit 123anime AJAX to get the echovideo embed URL
     const paddedEp = String(episode).padStart(3, '0');
     const ajaxUrl = `https://123anime.la/ajax/episode/info?epr=${animeId}%2F${episode}%2Fvidstreaming.io&ts=001`;
-    const ajaxRes = await axios.get(ajaxUrl, {
+    const ajaxRes = await cdnClient.get(ajaxUrl, {
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'X-Requested-With': 'XMLHttpRequest',
             'Referer': `https://123anime.la/anime/${animeId}/episode/${paddedEp}`
         },
@@ -32,7 +48,7 @@ async function resolveM3u8(animeId, episode) {
     const embedUrl = ajaxRes.data.target;
 
     // Step 2: Fetch the embed-3 page to extract zrpart2 token
-    const embedRes = await axios.get(embedUrl, { timeout: 5000 });
+    const embedRes = await cdnClient.get(embedUrl, { timeout: 5000 });
     const zrMatch = embedRes.data.match(/var zrpart2\s*=\s*'([^']+)'/);
     if (!zrMatch) throw new Error('Could not extract zrpart2 token from embed page');
     const zrpart2 = zrMatch[1];
@@ -40,7 +56,7 @@ async function resolveM3u8(animeId, episode) {
 
     // Step 3: Fetch the /hs/ player page to extract the data-id
     const hsUrl = `${baseUrl}/hs/${zrpart2}`;
-    const hsRes = await axios.get(hsUrl, {
+    const hsRes = await cdnClient.get(hsUrl, {
         headers: { 'Referer': embedUrl },
         timeout: 5000
     });
@@ -48,7 +64,7 @@ async function resolveM3u8(animeId, episode) {
     if (!idMatch) throw new Error('Could not extract data-id from player page');
 
     // Step 4: Query the getSources API for the actual M3U8 URL
-    const srcRes = await axios.get(`${baseUrl}/hs/getSources?id=${idMatch[1]}`, {
+    const srcRes = await cdnClient.get(`${baseUrl}/hs/getSources?id=${idMatch[1]}`, {
         headers: { 'Referer': hsUrl, 'X-Requested-With': 'XMLHttpRequest' },
         timeout: 5000
     });
@@ -56,7 +72,7 @@ async function resolveM3u8(animeId, episode) {
     if (!srcRes.data?.sources) throw new Error('getSources returned no sources');
 
     const value = {
-        masterUrl: srcRes.data.sources, // e.g. https://hlsx3cdn.burntburst45.store/naruto/1/master.m3u8
+        masterUrl: srcRes.data.sources,
         cdnHeaders: { 'Referer': baseUrl + '/', 'Origin': baseUrl },
         intro: srcRes.data.intro || null,
         outro: srcRes.data.outro || null,
@@ -83,8 +99,8 @@ router.get('/play', async (req, res) => {
         const { masterUrl, cdnHeaders } = await resolveM3u8(id, ep);
 
         // Fetch the master M3U8 from CDN
-        const m3u8Res = await axios.get(masterUrl, {
-            headers: { ...cdnHeaders, 'User-Agent': 'Mozilla/5.0' },
+        const m3u8Res = await cdnClient.get(masterUrl, {
+            headers: { ...cdnHeaders },
             timeout: 8000,
             responseType: 'text'
         });
@@ -114,6 +130,7 @@ router.get('/play', async (req, res) => {
 
 // ─── GET /play/proxy?url=...&id=...&ep=... ──────────────────────────────────
 // Proxies any CDN resource (sub-playlist or .ts segment) with zero buffering.
+// Uses persistent connections for fast segment delivery.
 // Supports HTTP Range for instant seeking.
 router.get('/play/proxy', async (req, res) => {
     const { url, id, ep } = req.query;
@@ -129,21 +146,16 @@ router.get('/play/proxy', async (req, res) => {
             }
         } catch (_) { /* fallback headers are fine */ }
 
-        const upstreamHeaders = {
-            ...cdnHeaders,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        };
+        const upstreamHeaders = { ...cdnHeaders };
 
         // Forward Range header for seeking support
         if (req.headers.range) {
             upstreamHeaders['Range'] = req.headers.range;
         }
 
-        const upstream = await axios.get(url, {
+        const upstream = await cdnClient.get(url, {
             headers: upstreamHeaders,
             responseType: 'stream',
-            timeout: 15000,
-            maxRedirects: 5,
             validateStatus: (s) => s < 400
         });
 
@@ -157,12 +169,18 @@ router.get('/play/proxy', async (req, res) => {
                 const playlistBase = url.substring(0, url.lastIndexOf('/') + 1);
                 const selfBase = `${req.protocol}://${req.get('host')}`;
 
-                // Rewrite .ts segment and .m3u8 references
+                // Rewrite ONLY .m3u8 references to proxy. Let .ts segments go direct!
                 const rewritten = body.replace(/^(?!#)(.+)$/gm, (match) => {
                     const line = match.trim();
                     if (!line) return match;
                     const absolute = line.startsWith('http') ? line : playlistBase + line;
-                    return `${selfBase}/play/proxy?url=${encodeURIComponent(absolute)}&id=${id || ''}&ep=${ep || ''}`;
+                    
+                    if (line.includes('.m3u8')) {
+                        return `${selfBase}/play/proxy?url=${encodeURIComponent(absolute)}&id=${id || ''}&ep=${ep || ''}`;
+                    }
+                    
+                    // Return direct CDN URL for segments! Zero buffering, full speed.
+                    return absolute;
                 });
 
                 res.set({
@@ -180,12 +198,14 @@ router.get('/play/proxy', async (req, res) => {
             return;
         }
 
-        // ─── For .ts segments and other binary data: pure zero-copy pipe ─────
+        // ─── For .ts segments: zero-copy pipe with persistent connection ─────
         const responseHeaders = {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': 'Range',
             'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
-            'Accept-Ranges': 'bytes'
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=86400',
+            'Connection': 'keep-alive'
         };
 
         // Forward relevant headers from upstream
@@ -194,13 +214,9 @@ router.get('/play/proxy', async (req, res) => {
         if (upstream.headers['content-range']) responseHeaders['Content-Range'] = upstream.headers['content-range'];
         if (upstream.headers['accept-ranges']) responseHeaders['Accept-Ranges'] = upstream.headers['accept-ranges'];
 
-        // Don't cache segments — they're large. Let the client handle caching.
-        responseHeaders['Cache-Control'] = 'public, max-age=86400';
-
         res.writeHead(upstream.status, responseHeaders);
 
         // Zero-copy pipe: data flows directly from CDN socket → client socket
-        // No RAM buffering on this server whatsoever.
         upstream.data.pipe(res);
 
         // Clean up if client disconnects mid-stream

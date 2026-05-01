@@ -209,11 +209,18 @@ app.get('/play/proxy', async (c) => {
             const playlistBase = url.substring(0, url.lastIndexOf('/') + 1);
             const selfBase = new URL(c.req.url).origin;
 
+            // Rewrite ONLY .m3u8 references to proxy. Let .ts segments go direct!
             const rewritten = body.replace(/^(?!#)(.+)$/gm, (match) => {
                 const line = match.trim();
                 if (!line) return match;
                 const absolute = line.startsWith('http') ? line : playlistBase + line;
-                return `${selfBase}/play/proxy?url=${encodeURIComponent(absolute)}&id=${id || ''}&ep=${ep || ''}`;
+                
+                if (line.includes('.m3u8')) {
+                    return `${selfBase}/play/proxy?url=${encodeURIComponent(absolute)}&id=${id || ''}&ep=${ep || ''}`;
+                }
+                
+                // Return direct CDN URL for segments! Zero buffering, full speed.
+                return absolute;
             });
 
             return new Response(rewritten, {
