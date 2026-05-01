@@ -21,6 +21,7 @@ import topAiringRouter from './routes/top_airing.js';
 import trendingRouter from './routes/trending.js';
 import sliderRouter from './routes/slider.js';
 import watchRouter from './routes/watch.js';
+import playRouter from './routes/play.js';
 
 dotenv.config();
 const app = express();
@@ -66,7 +67,8 @@ app.get('/', (req, res) => {
             anime: {
                 details: "/anime/one-piece",
                 episodes: "/api/v2/anime/one-piece/episodes",
-                stream: "/episode-stream?id=one-piece&ep=1"
+                stream: "/episode-stream?id=one-piece&ep=1",
+                play: "/play?id=one-piece&ep=1  (direct HLS video stream)"
             },
             schedule: {
                 live: "/schedule",
@@ -97,6 +99,7 @@ app.use('/overrated', overratedRouter);
 app.use('/most_popular', mostPopularRouter);
 app.use('/most_favorite', mostFavoriteRouter);
 app.use('/top_airing', topAiringRouter);
+app.use('/', playRouter);
 app.use('/', watchRouter);
 app.use('/watch', watchRouter);
 
