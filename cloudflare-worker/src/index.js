@@ -191,7 +191,8 @@ app.get('/play/proxy', async (c) => {
 
         const upstreamHeaders = {
             ...cdnHeaders,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept-Encoding': 'identity'
         };
 
         // Forward Range header for seeking
@@ -209,18 +210,12 @@ app.get('/play/proxy', async (c) => {
             const playlistBase = url.substring(0, url.lastIndexOf('/') + 1);
             const selfBase = new URL(c.req.url).origin;
 
-            // Rewrite ONLY .m3u8 references to proxy. Let .ts segments go direct!
+            // Rewrite all relative URLs (including .ts segments) to proxy through our worker.
             const rewritten = body.replace(/^(?!#)(.+)$/gm, (match) => {
                 const line = match.trim();
                 if (!line) return match;
                 const absolute = line.startsWith('http') ? line : playlistBase + line;
-                
-                if (line.includes('.m3u8')) {
-                    return `${selfBase}/play/proxy?url=${encodeURIComponent(absolute)}&id=${id || ''}&ep=${ep || ''}`;
-                }
-                
-                // Return direct CDN URL for segments! Zero buffering, full speed.
-                return absolute;
+                return `${selfBase}/play/proxy?url=${encodeURIComponent(absolute)}&id=${id || ''}&ep=${ep || ''}`;
             });
 
             return new Response(rewritten, {
